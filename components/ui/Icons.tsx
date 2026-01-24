@@ -1,0 +1,43 @@
+import { 
+  Shield, 
+  Activity, 
+  HeartPulse, 
+  Briefcase, 
+  Scale, 
+  Users, 
+  MessageCircle, 
+  CheckCircle2, 
+  MapPin, 
+  Phone,
+  CalendarCheck,
+  Dumbbell,
+  Clock,
+  Star,
+  Trophy,
+  Award,
+  Target,
+  Instagram,
+  Globe
+} from 'lucide-react';
+
+export {
+  Shield, 
+  Activity, 
+  HeartPulse, 
+  Briefcase, 
+  Scale, 
+  Users, 
+  MessageCircle, 
+  CheckCircle2, 
+  MapPin, 
+  Phone,
+  CalendarCheck,
+  Dumbbell,
+  Clock,
+  Star,
+  Trophy,
+  Award,
+  Target,
+  Instagram,
+  Globe
+};
