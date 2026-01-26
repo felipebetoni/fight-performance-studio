@@ -64,6 +64,13 @@ const Footer: React.FC = () => {
 
         <div className="border-t border-gray-900 pt-8 text-center text-sm text-gray-600">
           <p>&copy; {new Date().getFullYear()} Fight Performance Studio. Todos os direitos reservados.</p>
+          <p className="mt-3 text-gray-500 flex items-center justify-center gap-2">
+            <span>Desenvolvido por Felipe Betoni •</span>
+            <a href="https://instagram.com/felipbetoni" target="_blank" rel="noopener noreferrer" className="text-brand-red hover:text-brand-red transition-colors flex items-center gap-1">
+              <Instagram size={16} />
+              <span>@felipbetoni</span>
+            </a>
+          </p>
         </div>
       </div>
     </footer>
