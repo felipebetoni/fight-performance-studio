@@ -18,6 +18,18 @@ import {
   Target,
   Instagram,
   Globe
+  ,Plus
+  ,Search
+  ,X
+  ,Check
+  ,UserRound
+  ,DollarSign
+  ,ClipboardList
+  ,TrendingUp
+  ,PhoneCall
+  ,Trash2
+  ,Edit3
+  ,CalendarDays
 } from 'lucide-react';
 
 export {
@@ -39,5 +51,17 @@ export {
   Award,
   Target,
   Instagram,
-  Globe
+  Globe,
+  Plus,
+  Search,
+  X,
+  Check,
+  UserRound,
+  DollarSign,
+  ClipboardList,
+  TrendingUp,
+  PhoneCall,
+  Trash2,
+  Edit3,
+  CalendarDays
 };

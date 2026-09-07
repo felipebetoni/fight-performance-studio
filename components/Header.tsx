@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { MessageCircle, Instagram } from './ui/Icons';
+import { MessageCircle, Instagram, UserRound } from './ui/Icons';
 import { WHATSAPP_LINK, INSTAGRAM_LINK, IMAGES } from '../constants';
 
 const Header: React.FC = () => {
@@ -60,6 +60,14 @@ const Header: React.FC = () => {
             <MessageCircle size={18} />
             <span className="hidden md:inline">Agendar pelo WhatsApp</span>
             <span className="md:hidden">Agendar</span>
+          </a>
+          <a
+            href="/professor"
+            className="flex items-center gap-2 rounded-full border border-white/40 px-4 py-2 text-sm font-bold text-white transition hover:border-white hover:bg-white/10"
+          >
+            <UserRound size={17} />
+            <span className="hidden md:inline">Área do professor</span>
+            <span className="md:hidden">Professor</span>
           </a>
         </div>
       </div>
