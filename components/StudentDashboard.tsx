@@ -222,7 +222,7 @@ const StudentDashboard: React.FC<StudentDashboardProps> = ({ userId, onLogout })
       .filter((date): date is string => date !== null);
     const completedLessons = completedLessonDates.length;
     const message = [
-      `Olá, ${student.name}! 🥊💗`,
+      `Olá, ${student.name}!`,
       '',
       `Passando para lembrar que sua mensalidade do Fight Performance Studio vence no dia ${student.dueDay}.`,
       `Mensalidade: ${currency(student.monthlyFee)}`,
@@ -236,7 +236,7 @@ const StudentDashboard: React.FC<StudentDashboardProps> = ({ userId, onLogout })
       'Nubank',
       'Alisson Pereira',
       '',
-      'Obrigado! 🥰',
+      'Obrigado!',
     ].join('\n');
     window.open(`https://wa.me/${whatsappNumber}?text=${encodeURIComponent(message)}`, '_blank', 'noopener,noreferrer');
   };
