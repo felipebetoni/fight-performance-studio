@@ -25,7 +25,9 @@ type Student = {
   phone: string;
   days: string[];
   schedule: string;
-  lessonValue: number;
+  scheduleByDay?: Record<string, string>;
+  monthlyFee: number;
+  dueDay: number;
   attendance: Record<string, AttendanceStatus>;
 };
 
@@ -36,7 +38,8 @@ const initialStudents: Student[] = [
     phone: '(14) 99821-4421',
     days: ['Segunda', 'Quarta', 'Sexta'],
     schedule: '18:00',
-    lessonValue: 70,
+    monthlyFee: 280,
+    dueDay: 10,
     attendance: { '02': 'present', '04': 'present', '06': 'absent', '09': 'present', '11': 'present', '13': 'pending' },
   },
   {
@@ -45,7 +48,8 @@ const initialStudents: Student[] = [
     phone: '(14) 99714-8302',
     days: ['Terça', 'Quinta'],
     schedule: '07:00',
-    lessonValue: 80,
+    monthlyFee: 320,
+    dueDay: 10,
     attendance: { '01': 'present', '03': 'present', '08': 'present', '10': 'absent', '15': 'pending' },
   },
   {
@@ -54,7 +58,8 @@ const initialStudents: Student[] = [
     phone: '(14) 99653-1920',
     days: ['Segunda', 'Quarta'],
     schedule: '19:30',
-    lessonValue: 65,
+    monthlyFee: 260,
+    dueDay: 10,
     attendance: { '02': 'present', '04': 'absent', '09': 'present', '11': 'pending' },
   },
 ];
@@ -91,7 +96,7 @@ const StudentDashboard: React.FC<StudentDashboardProps> = ({ userId, onLogout })
   const today = new Date();
   const [selectedMonth, setSelectedMonth] = useState(today.getMonth());
   const [selectedDay, setSelectedDay] = useState(String(today.getDate()).padStart(2, '0'));
-  const [form, setForm] = useState({ name: '', phone: '', schedule: '', lessonValue: '', days: [] as string[] });
+  const [form, setForm] = useState({ name: '', phone: '', schedule: '', monthlyFee: '', dueDay: '10', days: [] as string[], scheduleByDay: {} as Record<string, string> });
 
   useEffect(() => {
     if (!db) {
@@ -101,10 +106,16 @@ const StudentDashboard: React.FC<StudentDashboardProps> = ({ userId, onLogout })
     }
     const studentsQuery = query(collection(db, 'alunos'), where('ownerId', '==', userId));
     return onSnapshot(studentsQuery, (snapshot) => {
-      const cloudStudents = snapshot.docs.map((studentDocument) => ({
-        id: studentDocument.id,
-        ...studentDocument.data(),
-      })) as Student[];
+      const cloudStudents = snapshot.docs.map((studentDocument) => {
+        const data = studentDocument.data();
+        return {
+          id: studentDocument.id,
+          ...data,
+          monthlyFee: Number(data.monthlyFee ?? data.lessonValue ?? 0),
+          dueDay: Number(data.dueDay ?? 10),
+          scheduleByDay: data.scheduleByDay ?? {},
+        };
+      }) as Student[];
       if (cloudStudents.length === 0 && !migratedLocalData.current) {
         migratedLocalData.current = true;
         const savedStudents = localStorage.getItem('fight-performance-students');
@@ -133,32 +144,36 @@ const StudentDashboard: React.FC<StudentDashboardProps> = ({ userId, onLogout })
   const daysInSelectedMonth = new Date(today.getFullYear(), selectedMonth + 1, 0).getDate();
   const monthDays = Array.from({ length: daysInSelectedMonth }, (_, index) => String(index + 1).padStart(2, '0'));
   const attendanceKey = (day: string) => `${today.getFullYear()}-${String(selectedMonth + 1).padStart(2, '0')}-${day}`;
+  const scheduleForDay = (student: Student, day: number) => {
+    const weekday = weekdayByDate[new Date(today.getFullYear(), selectedMonth, day).getDay()];
+    return student.scheduleByDay?.[weekday] ?? student.schedule;
+  };
   const attendedLessons = students.reduce(
     (total, student) => total + Object.values(student.attendance).filter((status) => status === 'present').length,
     0,
   );
   const totalBilling = students.reduce(
-    (total, student) => total + Object.values(student.attendance).filter((status) => status === 'present').length * student.lessonValue,
+    (total, student) => total + student.monthlyFee,
     0,
   );
 
   const openNewStudent = () => {
     setEditingStudent(null);
-    setForm({ name: '', phone: '', schedule: '', lessonValue: '', days: [] });
+    setForm({ name: '', phone: '', schedule: '', monthlyFee: '', dueDay: '10', days: [], scheduleByDay: {} });
     setIsModalOpen(true);
   };
 
   const openEditStudent = (student: Student) => {
     setEditingStudent(student);
-    setForm({ name: student.name, phone: student.phone, schedule: student.schedule, lessonValue: String(student.lessonValue), days: student.days });
+    setForm({ name: student.name, phone: student.phone, schedule: student.schedule, monthlyFee: String(student.monthlyFee), dueDay: String(student.dueDay), days: student.days, scheduleByDay: student.scheduleByDay ?? Object.fromEntries(student.days.map((day) => [day, student.schedule])) });
     setIsModalOpen(true);
   };
 
   const saveStudent = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!form.name.trim() || !form.phone.trim() || !form.schedule || !form.lessonValue || form.days.length === 0) return;
+    if (!form.name.trim() || !form.phone.trim() || !form.monthlyFee || !form.dueDay || form.days.length === 0 || form.days.some((day) => !form.scheduleByDay[day])) return;
     if (!db) return;
-    const studentData = { name: form.name.trim(), phone: form.phone, schedule: form.schedule, lessonValue: Number(form.lessonValue), days: form.days };
+    const studentData = { name: form.name.trim(), phone: form.phone, schedule: form.scheduleByDay[form.days[0]], scheduleByDay: form.scheduleByDay, monthlyFee: Number(form.monthlyFee), dueDay: Number(form.dueDay), days: form.days };
     try {
       if (editingStudent) {
         await updateDoc(doc(db, 'alunos', editingStudent.id), studentData);
@@ -200,26 +215,28 @@ const StudentDashboard: React.FC<StudentDashboardProps> = ({ userId, onLogout })
       .filter(([, status]) => status === 'present')
       .map(([date]) => {
         const [year, month, day] = date.split('-');
-        if (year && month && day) return `${day}/${month}/${year} às ${student.schedule}`;
-        if (/^\d{2}$/.test(date)) return `${date}/09/${today.getFullYear()} às ${student.schedule}`;
+        if (year && month && day) return `${day}/${month}/${year} às ${scheduleForDay(student, Number(day))}`;
+        if (/^\d{2}$/.test(date)) return `${date}/09/${today.getFullYear()} às ${scheduleForDay(student, Number(date))}`;
         return null;
       })
       .filter((date): date is string => date !== null);
     const completedLessons = completedLessonDates.length;
-    const total = completedLessons * student.lessonValue;
     const message = [
-      `Olá, ${student.name}!`,
+      `Olá, ${student.name}! 🥊💗`,
       '',
-      'Segue o resumo das suas aulas no Fight Performance Studio:',
-      `Aulas realizadas: ${completedLessons}`,
+      `Passando para lembrar que sua mensalidade do Fight Performance Studio vence no dia ${student.dueDay}.`,
+      `Mensalidade: ${currency(student.monthlyFee)}`,
       '',
-      'Datas e horários:',
+      'Aulas realizadas no mês:',
       ...(completedLessonDates.length ? completedLessonDates.map((date) => `- ${date}`) : ['- Nenhuma aula marcada como realizada']),
       '',
-      `Valor por aula: ${currency(student.lessonValue)}`,
-      `Total a pagar: ${currency(total)}`,
+      'Para continuar treinando com a gente, realize o pagamento pelo Pix enviado.',
       '',
-      'Obrigado!',
+      'Pix: 14996190682',
+      'Nubank',
+      'Alisson Pereira',
+      '',
+      'Obrigado! 🥰',
     ].join('\n');
     window.open(`https://wa.me/${whatsappNumber}?text=${encodeURIComponent(message)}`, '_blank', 'noopener,noreferrer');
   };
@@ -247,7 +264,7 @@ const StudentDashboard: React.FC<StudentDashboardProps> = ({ userId, onLogout })
           {[
             { label: 'Alunos ativos', value: students.length, icon: UserRound, color: 'text-blue-600', bg: 'bg-blue-50' },
             { label: 'Aulas realizadas', value: attendedLessons, icon: Check, color: 'text-emerald-600', bg: 'bg-emerald-50' },
-            { label: 'Faturamento previsto', value: currency(totalBilling), icon: DollarSign, color: 'text-brand-red', bg: 'bg-red-50' },
+            { label: 'Mensalidades previstas', value: currency(totalBilling), icon: DollarSign, color: 'text-brand-red', bg: 'bg-red-50' },
             { label: 'Taxa de presença', value: `${attendedLessons ? Math.round((attendedLessons / Math.max(attendedLessons + 3, 1)) * 100) : 0}%`, icon: TrendingUp, color: 'text-violet-600', bg: 'bg-violet-50' },
           ].map(({ label, value, icon: Icon, color, bg }) => <div key={label} className="rounded-2xl border border-zinc-100 bg-white p-3 shadow-sm sm:p-5"><div className="mb-3 flex items-start justify-between gap-2 sm:mb-4"><span className="text-xs leading-tight text-zinc-500 sm:text-sm">{label}</span><span className={`rounded-lg p-1.5 sm:p-2 ${bg} ${color}`}><Icon size={17} /></span></div><p className="truncate text-xl font-black sm:text-2xl">{value}</p></div>)}
         </div>
@@ -255,14 +272,14 @@ const StudentDashboard: React.FC<StudentDashboardProps> = ({ userId, onLogout })
         <div className="grid gap-6 lg:grid-cols-[1.15fr_1fr]">
           <section className="overflow-hidden rounded-2xl border border-zinc-100 bg-white shadow-sm">
             <div className="flex flex-col justify-between gap-3 border-b border-zinc-100 p-4 sm:flex-row sm:items-center sm:p-5"><div><h2 className="font-bold">Lista de alunos</h2><p className="text-sm text-zinc-500">Selecione um aluno para ver os detalhes.</p></div><div className="relative w-full sm:w-48"><Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={17} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar aluno..." className="w-full rounded-lg border border-zinc-200 py-2 pl-9 pr-3 text-sm outline-none focus:border-brand-red" /></div></div>
-            <div className="divide-y divide-zinc-100">{filteredStudents.map((student) => <button key={student.id} onClick={() => setSelectedStudentId(student.id)} className={`flex w-full items-center gap-2 p-4 text-left transition hover:bg-zinc-50 sm:gap-3 sm:p-5 ${selectedStudent?.id === student.id ? 'border-l-4 border-brand-red bg-red-50/40 pl-3 sm:pl-4' : ''}`}><div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-dark text-sm font-bold text-white sm:h-10 sm:w-10">{student.name.split(' ').map((name) => name[0]).slice(0, 2).join('')}</div><div className="min-w-0 flex-1"><p className="truncate text-sm font-bold sm:text-base">{student.name}</p><p className="truncate text-xs text-zinc-500 sm:text-sm">{student.schedule} · {student.days.join(', ')}</p></div><span className="shrink-0 text-xs font-bold text-zinc-700 sm:text-sm">{currency(student.lessonValue)}<small className="font-normal text-zinc-400">/aula</small></span></button>)}{filteredStudents.length === 0 && <p className="p-8 text-center text-sm text-zinc-500">Nenhum aluno encontrado.</p>}</div>
+            <div className="divide-y divide-zinc-100">{filteredStudents.map((student) => <button key={student.id} onClick={() => setSelectedStudentId(student.id)} className={`flex w-full items-center gap-2 p-4 text-left transition hover:bg-zinc-50 sm:gap-3 sm:p-5 ${selectedStudent?.id === student.id ? 'border-l-4 border-brand-red bg-red-50/40 pl-3 sm:pl-4' : ''}`}><div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-dark text-sm font-bold text-white sm:h-10 sm:w-10">{student.name.split(' ').map((name) => name[0]).slice(0, 2).join('')}</div><div className="min-w-0 flex-1"><p className="truncate text-sm font-bold sm:text-base">{student.name}</p><p className="truncate text-xs text-zinc-500 sm:text-sm">{student.schedule} · {student.days.join(', ')}</p></div><span className="shrink-0 text-xs font-bold text-zinc-700 sm:text-sm">{currency(student.monthlyFee)}<small className="font-normal text-zinc-400">/mês</small></span></button>)}{filteredStudents.length === 0 && <p className="p-8 text-center text-sm text-zinc-500">Nenhum aluno encontrado.</p>}</div>
           </section>
 
-          {selectedStudent ? <section className="rounded-2xl border border-zinc-100 bg-white p-4 shadow-sm sm:p-6"><div className="flex items-start justify-between"><div className="flex items-center gap-3"><div className="flex h-12 w-12 items-center justify-center rounded-full bg-brand-dark font-bold text-white">{selectedStudent.name.split(' ').map((name) => name[0]).slice(0, 2).join('')}</div><div><h2 className="font-bold">{selectedStudent.name}</h2><p className="flex items-center gap-1 text-sm text-zinc-500"><PhoneCall size={13} /> {selectedStudent.phone}</p></div></div><div className="flex gap-1"><button onClick={() => openEditStudent(selectedStudent)} className="rounded-lg p-2 text-zinc-400 hover:bg-zinc-100 hover:text-brand-dark" aria-label="Editar aluno"><Edit3 size={17} /></button><button onClick={() => removeStudent(selectedStudent.id)} className="rounded-lg p-2 text-zinc-400 hover:bg-red-50 hover:text-brand-red" aria-label="Excluir aluno"><Trash2 size={17} /></button></div></div><div className="mt-6 grid grid-cols-2 gap-3"><div className="rounded-xl bg-zinc-50 p-3"><p className="text-xs text-zinc-500">Horário</p><p className="mt-1 font-bold">{selectedStudent.schedule}</p></div><div className="rounded-xl bg-zinc-50 p-3"><p className="text-xs text-zinc-500">Dias fixos</p><p className="mt-1 text-sm font-bold">{selectedStudent.days.join(', ')}</p></div></div><div className="mt-6 flex items-center justify-between gap-3"><div><h3 className="font-bold">Presença de {months[selectedMonth].toLowerCase()}</h3><p className="text-xs text-zinc-500">Clique para alternar: presente, falta ou pendente.</p></div><div className="flex items-center gap-2"><CalendarDays className="hidden text-brand-red sm:block" size={20} /><select value={selectedMonth} onChange={(event) => { setSelectedMonth(Number(event.target.value)); setSelectedDay('01'); }} className="rounded-lg border border-zinc-200 bg-white px-2 py-2 text-sm font-semibold outline-none focus:border-brand-red">{months.map((month, index) => <option key={month} value={index}>{month}</option>)}</select></div></div><div className="mt-3 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-zinc-500"><span><i className="mr-1 inline-block h-2.5 w-2.5 rounded-full bg-amber-300 align-middle" />Dia de treino</span><span><i className="mr-1 inline-block h-2.5 w-2.5 rounded-full bg-emerald-400 align-middle" />Presente</span><span><i className="mr-1 inline-block h-2.5 w-2.5 rounded-full bg-red-400 align-middle" />Falta</span></div><div className="mt-4 grid grid-cols-4 gap-1.5 sm:grid-cols-7 sm:gap-2">{monthDays.map((day) => { const key = attendanceKey(day); const status = selectedStudent.attendance[key] ?? (selectedMonth === 8 ? selectedStudent.attendance[day] : undefined) ?? 'pending'; const isTrainingDay = selectedStudent.days.includes(weekdayByDate[new Date(today.getFullYear(), selectedMonth, Number(day)).getDay()]); const dayStyle = status === 'present' ? 'border-emerald-300 bg-emerald-50 text-emerald-700' : status === 'absent' ? 'border-red-300 bg-red-50 text-red-600' : isTrainingDay ? 'border-amber-300 bg-amber-50 text-amber-700' : 'border-zinc-200 bg-zinc-50 text-zinc-400'; return <button key={day} onClick={() => { setSelectedDay(day); void toggleAttendance(selectedStudent, day); }} className={`rounded-lg border p-2 text-center transition ${selectedDay === day ? 'ring-2 ring-brand-red ring-offset-1' : ''} ${dayStyle}`}><span className="block text-[10px] uppercase">Dia</span><span className="font-bold">{day}</span><span className="mt-1 block text-[10px] font-bold">{status === 'present' ? 'OK' : status === 'absent' ? 'FALTA' : isTrainingDay ? 'TREINO' : '—'}</span></button>; })}</div><div className="mt-6 flex flex-col gap-4 border-t border-zinc-100 pt-5 sm:flex-row sm:items-center sm:justify-between"><div><p className="text-sm text-zinc-500">Total a cobrar</p><p className="text-2xl font-black text-brand-red">{currency(Object.values(selectedStudent.attendance).filter((status) => status === 'present').length * selectedStudent.lessonValue)}</p></div><div className="flex flex-col gap-3 sm:items-end"><div className="text-right text-sm text-zinc-500"><p><strong className="text-zinc-800">{Object.values(selectedStudent.attendance).filter((status) => status === 'present').length}</strong> aulas realizadas</p><p><strong className="text-zinc-800">{currency(selectedStudent.lessonValue)}</strong> por aula</p></div><button onClick={() => sendChargeByWhatsApp(selectedStudent)} className="flex items-center justify-center gap-2 rounded-lg bg-[#25D366] px-4 py-2.5 text-sm font-bold text-white transition hover:bg-[#128C7E]"><MessageCircle size={17} /> Enviar cobrança no WhatsApp</button></div></div></section> : <section className="flex min-h-[300px] items-center justify-center rounded-2xl border border-dashed border-zinc-300 bg-white p-6 text-center text-zinc-500"><ClipboardList className="mb-2" /><p>Adicione seu primeiro aluno para começar.</p></section>}
+          {selectedStudent ? <section className="rounded-2xl border border-zinc-100 bg-white p-4 shadow-sm sm:p-6"><div className="flex items-start justify-between"><div className="flex items-center gap-3"><div className="flex h-12 w-12 items-center justify-center rounded-full bg-brand-dark font-bold text-white">{selectedStudent.name.split(' ').map((name) => name[0]).slice(0, 2).join('')}</div><div><h2 className="font-bold">{selectedStudent.name}</h2><p className="flex items-center gap-1 text-sm text-zinc-500"><PhoneCall size={13} /> {selectedStudent.phone}</p></div></div><div className="flex gap-1"><button onClick={() => openEditStudent(selectedStudent)} className="rounded-lg p-2 text-zinc-400 hover:bg-zinc-100 hover:text-brand-dark" aria-label="Editar aluno"><Edit3 size={17} /></button><button onClick={() => removeStudent(selectedStudent.id)} className="rounded-lg p-2 text-zinc-400 hover:bg-red-50 hover:text-brand-red" aria-label="Excluir aluno"><Trash2 size={17} /></button></div></div><div className="mt-6 grid grid-cols-2 gap-3"><div className="rounded-xl bg-zinc-50 p-3"><p className="text-xs text-zinc-500">Horário</p><p className="mt-1 font-bold">{selectedStudent.schedule}</p></div><div className="rounded-xl bg-zinc-50 p-3"><p className="text-xs text-zinc-500">Dias fixos</p><p className="mt-1 text-sm font-bold">{selectedStudent.days.join(', ')}</p></div></div><div className="mt-6 flex items-center justify-between gap-3"><div><h3 className="font-bold">Presença de {months[selectedMonth].toLowerCase()}</h3><p className="text-xs text-zinc-500">Clique para alternar: presente, falta ou pendente.</p></div><div className="flex items-center gap-2"><CalendarDays className="hidden text-brand-red sm:block" size={20} /><select value={selectedMonth} onChange={(event) => { setSelectedMonth(Number(event.target.value)); setSelectedDay('01'); }} className="rounded-lg border border-zinc-200 bg-white px-2 py-2 text-sm font-semibold outline-none focus:border-brand-red">{months.map((month, index) => <option key={month} value={index}>{month}</option>)}</select></div></div><div className="mt-3 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-zinc-500"><span><i className="mr-1 inline-block h-2.5 w-2.5 rounded-full bg-amber-300 align-middle" />Dia de treino</span><span><i className="mr-1 inline-block h-2.5 w-2.5 rounded-full bg-emerald-400 align-middle" />Presente</span><span><i className="mr-1 inline-block h-2.5 w-2.5 rounded-full bg-red-400 align-middle" />Falta</span></div><div className="mt-4 grid grid-cols-4 gap-1.5 sm:grid-cols-7 sm:gap-2">{monthDays.map((day) => { const key = attendanceKey(day); const status = selectedStudent.attendance[key] ?? (selectedMonth === 8 ? selectedStudent.attendance[day] : undefined) ?? 'pending'; const isTrainingDay = selectedStudent.days.includes(weekdayByDate[new Date(today.getFullYear(), selectedMonth, Number(day)).getDay()]); const dayStyle = status === 'present' ? 'border-emerald-300 bg-emerald-50 text-emerald-700' : status === 'absent' ? 'border-red-300 bg-red-50 text-red-600' : isTrainingDay ? 'border-amber-300 bg-amber-50 text-amber-700' : 'border-zinc-200 bg-zinc-50 text-zinc-400'; return <button key={day} onClick={() => { setSelectedDay(day); void toggleAttendance(selectedStudent, day); }} className={`rounded-lg border p-2 text-center transition ${selectedDay === day ? 'ring-2 ring-brand-red ring-offset-1' : ''} ${dayStyle}`}><span className="block text-[10px] uppercase">Dia</span><span className="font-bold">{day}</span><span className="mt-1 block text-[10px] font-bold">{status === 'present' ? 'OK' : status === 'absent' ? 'FALTA' : isTrainingDay ? 'TREINO' : '—'}</span></button>; })}</div><div className="mt-6 flex flex-col gap-4 border-t border-zinc-100 pt-5 sm:flex-row sm:items-center sm:justify-between"><div><p className="text-sm text-zinc-500">Mensalidade</p><p className="text-2xl font-black text-brand-red">{currency(selectedStudent.monthlyFee)}</p></div><div className="flex flex-col gap-3 sm:items-end"><div className="text-right text-sm text-zinc-500"><p><strong className="text-zinc-800">{Object.values(selectedStudent.attendance).filter((status) => status === 'present').length}</strong> aulas realizadas</p><p>Vencimento: <strong className="text-zinc-800">dia {selectedStudent.dueDay}</strong></p></div><button onClick={() => sendChargeByWhatsApp(selectedStudent)} className="flex items-center justify-center gap-2 rounded-lg bg-[#25D366] px-4 py-2.5 text-sm font-bold text-white transition hover:bg-[#128C7E]"><MessageCircle size={17} /> Enviar cobrança no WhatsApp</button></div></div></section> : <section className="flex min-h-[300px] items-center justify-center rounded-2xl border border-dashed border-zinc-300 bg-white p-6 text-center text-zinc-500"><ClipboardList className="mb-2" /><p>Adicione seu primeiro aluno para começar.</p></section>}
         </div>
       </main>
 
-      {isModalOpen && <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/60 p-3 sm:p-4"><form onSubmit={saveStudent} className="my-3 w-full max-w-lg rounded-2xl bg-white p-4 shadow-2xl sm:my-6 sm:p-6"><div className="mb-6 flex items-center justify-between"><div><h2 className="text-xl font-black">{editingStudent ? 'Editar aluno' : 'Novo aluno'}</h2><p className="text-sm text-zinc-500">Preencha os dados para acompanhar o treino.</p></div><button type="button" onClick={() => setIsModalOpen(false)} className="rounded-lg p-2 text-zinc-400 hover:bg-zinc-100" aria-label="Fechar"><X size={20} /></button></div><div className="grid gap-4 sm:grid-cols-2"><label className="sm:col-span-2"><span className="mb-1 block text-sm font-semibold">Nome completo</span><input required value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} className="w-full rounded-lg border border-zinc-200 px-3 py-2.5 outline-none focus:border-brand-red" placeholder="Ex.: João da Silva" /></label><label><span className="mb-1 block text-sm font-semibold">Telefone</span><input required type="tel" inputMode="numeric" maxLength={15} value={form.phone} onChange={(event) => setForm({ ...form, phone: formatPhone(event.target.value) })} className="w-full rounded-lg border border-zinc-200 px-3 py-2.5 outline-none focus:border-brand-red" placeholder="(14) 99999-9999" /></label>      <label><span className="mb-1 block text-sm font-semibold">Horário</span><select required value={form.schedule} onChange={(event) => setForm({ ...form, schedule: event.target.value })} className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2.5 outline-none focus:border-brand-red"><option value="">Selecione</option>{timeOptions.map((time) => <option key={time} value={time}>{time}</option>)}</select></label><label><span className="mb-1 block text-sm font-semibold">Valor por aula (R$)</span><input required min="0" step="0.01" type="number" value={form.lessonValue} onChange={(event) => setForm({ ...form, lessonValue: event.target.value })} className="w-full rounded-lg border border-zinc-200 px-3 py-2.5 outline-none focus:border-brand-red" placeholder="70,00" /></label></div><div className="mt-5"><span className="mb-2 block text-sm font-semibold">Dias de treino</span><div className="flex flex-wrap gap-2">{weekdayOptions.map((day) => <button type="button" key={day} onClick={() => setForm({ ...form, days: form.days.includes(day) ? form.days.filter((item) => item !== day) : [...form.days, day] })} className={`rounded-full border px-3 py-1.5 text-sm font-medium ${form.days.includes(day) ? 'border-brand-red bg-brand-red text-white' : 'border-zinc-200 text-zinc-600'}`}>{day}</button>)}</div></div><button type="submit" className="mt-7 flex w-full items-center justify-center gap-2 rounded-xl bg-brand-dark py-3 font-bold text-white hover:bg-zinc-700"><Check size={18} /> {editingStudent ? 'Salvar alterações' : 'Cadastrar aluno'}</button></form></div>}
+      {isModalOpen && <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/60 p-3 sm:p-4"><form onSubmit={saveStudent} className="my-3 w-full max-w-lg rounded-2xl bg-white p-4 shadow-2xl sm:my-6 sm:p-6"><div className="mb-6 flex items-center justify-between"><div><h2 className="text-xl font-black">{editingStudent ? 'Editar aluno' : 'Novo aluno'}</h2><p className="text-sm text-zinc-500">Preencha os dados para acompanhar o treino.</p></div><button type="button" onClick={() => setIsModalOpen(false)} className="rounded-lg p-2 text-zinc-400 hover:bg-zinc-100" aria-label="Fechar"><X size={20} /></button></div><div className="grid gap-4 sm:grid-cols-2"><label className="sm:col-span-2"><span className="mb-1 block text-sm font-semibold">Nome completo</span><input required value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} className="w-full rounded-lg border border-zinc-200 px-3 py-2.5 outline-none focus:border-brand-red" placeholder="Ex.: João da Silva" /></label><label><span className="mb-1 block text-sm font-semibold">Telefone</span><input required type="tel" inputMode="numeric" maxLength={15} value={form.phone} onChange={(event) => setForm({ ...form, phone: formatPhone(event.target.value) })} className="w-full rounded-lg border border-zinc-200 px-3 py-2.5 outline-none focus:border-brand-red" placeholder="(14) 99999-9999" /></label><label><span className="mb-1 block text-sm font-semibold">Mensalidade (R$)</span><input required min="0" step="0.01" type="number" value={form.monthlyFee} onChange={(event) => setForm({ ...form, monthlyFee: event.target.value })} className="w-full rounded-lg border border-zinc-200 px-3 py-2.5 outline-none focus:border-brand-red" placeholder="280,00" /></label><label><span className="mb-1 block text-sm font-semibold">Dia de vencimento</span><input required min="1" max="31" type="number" value={form.dueDay} onChange={(event) => setForm({ ...form, dueDay: event.target.value })} className="w-full rounded-lg border border-zinc-200 px-3 py-2.5 outline-none focus:border-brand-red" placeholder="10" /></label></div><div className="mt-5"><span className="mb-2 block text-sm font-semibold">Dias e horários de treino</span><div className="space-y-2">{weekdayOptions.map((day) => <div key={day} className="flex items-center gap-2"><button type="button" onClick={() => { const days = form.days.includes(day) ? form.days.filter((item) => item !== day) : [...form.days, day]; const scheduleByDay = { ...form.scheduleByDay }; if (!days.includes(day)) delete scheduleByDay[day]; else if (!scheduleByDay[day]) scheduleByDay[day] = '18:00'; setForm({ ...form, days, scheduleByDay }); }} className={`min-w-24 rounded-full border px-3 py-1.5 text-sm font-medium ${form.days.includes(day) ? 'border-brand-red bg-brand-red text-white' : 'border-zinc-200 text-zinc-600'}`}>{day}</button>{form.days.includes(day) && <select required value={form.scheduleByDay[day] ?? ''} onChange={(event) => setForm({ ...form, scheduleByDay: { ...form.scheduleByDay, [day]: event.target.value } })} className="flex-1 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-brand-red"><option value="">Horário</option>{timeOptions.map((time) => <option key={time} value={time}>{time}</option>)}</select>}</div>)}</div></div><button type="submit" className="mt-7 flex w-full items-center justify-center gap-2 rounded-xl bg-brand-dark py-3 font-bold text-white hover:bg-zinc-700"><Check size={18} /> {editingStudent ? 'Salvar alterações' : 'Cadastrar aluno'}</button></form></div>}
     </div>
   );
 };
