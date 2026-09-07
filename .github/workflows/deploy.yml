@@ -42,7 +42,10 @@ jobs:
           VITE_FIREBASE_APP_ID: ${{ secrets.VITE_FIREBASE_APP_ID }}
 
       - name: Configure SPA fallback
-        run: cp dist/index.html dist/404.html
+        run: |
+          cp dist/index.html dist/404.html
+          mkdir -p dist/professor
+          cp dist/index.html dist/professor/index.html
 
       - name: Setup Pages
         uses: actions/configure-pages@v4
