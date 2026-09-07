@@ -1,0 +1,12 @@
+{
+  "rewrites": [
+    {
+      "source": "/professor",
+      "destination": "/"
+    },
+    {
+      "source": "/professor/:path*",
+      "destination": "/"
+    }
+  ]
+}
